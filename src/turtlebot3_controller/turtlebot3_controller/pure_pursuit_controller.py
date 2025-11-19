@@ -6,7 +6,7 @@ from sensor_msgs.msg import LaserScan  # For dynamic obstacle detection
 from turtlebot3_msgs.msg import Trajectory, TrajectoryPoint  # adjust import as per your package
 import math
 import numpy as np
-
+import matplotlib.pyplot as plt  # Added for plotting
 
 class PurePursuitController(Node):
     def __init__(self):
@@ -40,6 +40,12 @@ class PurePursuitController(Node):
         self.min_obstacle_distance = 0.25  # meters, stop if closer
         self.scan_ranges = []  # store latest lidar scan
 
+        # --- Added for trajectory logging ---
+        self.actual_x = []
+        self.actual_y = []
+        self.time_stamps = []
+        # ------------------------------------
+
         # Control loop timer
         self.timer = self.create_timer(self.dt, self.control_loop)
 
@@ -71,6 +77,12 @@ class PurePursuitController(Node):
             # Stop robot if trajectory finished
             self.cmd_pub.publish(Twist())
             return
+
+        # --- Record actual positions for plotting ---
+        self.actual_x.append(self.x)
+        self.actual_y.append(self.y)
+        self.time_stamps.append(self.get_clock().now().nanoseconds * 1e-9)  # convert to seconds
+        # -------------------------------------------
 
         # --- Pure Pursuit: Find lookahead goal point ---
         goal_point = None
@@ -142,6 +154,20 @@ class PurePursuitController(Node):
             self.cmd_pub.publish(Twist())
             self.get_logger().info("Reached final waypoint")
 
+            # --- Plot planned vs actual path ---
+            planned_x = [p[0] for p in self.trajectory]
+            planned_y = [p[1] for p in self.trajectory]
+
+            plt.figure()
+            plt.plot(planned_x, planned_y, 'r--', label='Planned Path')
+            plt.plot(self.actual_x, self.actual_y, 'b-', label='Actual Path')
+            plt.scatter(planned_x[-1], planned_y[-1], c='g', marker='*', label='Goal')
+            plt.xlabel('X (m)')
+            plt.ylabel('Y (m)')
+            plt.title('Planned vs Actual Path')
+            plt.legend()
+            plt.show()
+            # -----------------------------------
 
 def main(args=None):
     rclpy.init(args=args)

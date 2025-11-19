@@ -8,6 +8,9 @@
 
   <!-- Build and exec dependencies -->
   <buildtool_depend>ament_python</buildtool_depend>
+  <build_depend>turtlebot3_msgs</build_depend>  
+  <exec_depend>turtlebot3_msgs</exec_depend>
+
   <exec_depend>rclpy</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>

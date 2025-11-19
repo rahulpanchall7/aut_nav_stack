@@ -150,9 +150,9 @@ Visualization Manager:
       Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
-      Max Intensity: 0
+      Max Intensity: -999999
       Min Color: 0; 0; 0
-      Min Intensity: 0
+      Min Intensity: 999999
       Name: LaserScan
       Position Transformer: XYZ
       Selectable: true
@@ -168,6 +168,34 @@ Visualization Manager:
         Value: /scan
       Use Fixed Frame: true
       Use rainbow: true
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 224; 27; 36
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Lines
+      Line Width: 0.029999999329447746
+      Name: Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /discrete_path
       Value: true
     - Alpha: 1
       Buffer Length: 1
@@ -195,7 +223,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /discrete_path
+        Value: /smooth_path
       Value: true
   Enabled: true
   Global Options:
@@ -243,25 +271,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 12.017012596130371
+      Distance: 3.699038028717041
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 1.8848766088485718
-        Y: 0.18809692561626434
-        Z: 0.3761008679866791
+        X: 0.5283637642860413
+        Y: -0.004751313477754593
+        Z: 0.25824421644210815
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.5497963428497314
+      Pitch: 1.4847962856292725
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 3.145399332046509
+      Yaw: 3.2154006958007812
     Saved: ~
 Window Geometry:
   Displays:
@@ -279,5 +307,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1200
-  X: 531
-  Y: 63
+  X: 180
+  Y: 59

@@ -6,11 +6,12 @@ from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from nav_msgs.msg import Path
 from ament_index_python.packages import get_package_share_directory
 import yaml
-import os
 from PIL import Image
 import numpy as np
 
 from turtlebot3_planner.path_generator import generate_collision_aware_path
+from turtlebot3_planner.path_smoother import smooth_path
+from turtlebot3_planner.path_smoother import compute_orientations
 
 def load_map_from_yaml(yaml_file):
     """
@@ -47,13 +48,23 @@ def load_map_from_yaml(yaml_file):
 class PlannerNode(Node):
     def __init__(self):
         super().__init__('planner_node')
+        # num of waypoint arguments
+        self.declare_parameter('num_discrete_waypoints', 50)  # default 50
+        self.declare_parameter('num_smooth_waypoints', 200)   # default 200
 
         # Subscribers
         self.create_subscription(PoseWithCovarianceStamped, '/initialpose', self.initial_pose_callback, 10)
         self.create_subscription(PoseStamped, '/goal_pose', self.goal_pose_callback, 10)
+        # Subscribe to current robot pose for dynamic re-planning
+        self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.current_pose_callback, 10)
+
+        # Initialize last plan timestamp for rate-limiting
+        self.last_plan_time = self.get_clock().now()
+
 
         # Publisher
-        self.path_pub = self.create_publisher(Path, '/discrete_path', 10)
+        self.discrete_path_pub = self.create_publisher(Path, '/discrete_path', 10)
+        self.smooth_path_pub = self.create_publisher(Path, '/smooth_path', 10)
 
         # Store start/goal poses
         self.start_pose = None
@@ -75,7 +86,29 @@ class PlannerNode(Node):
         self.get_logger().info(f"Received goal pose: x={self.goal_pose[0]:.2f}, y={self.goal_pose[1]:.2f}")
         self.try_generate_path()
 
+    def current_pose_callback(self, msg):
+        current_pose = (msg.pose.pose.position.x, msg.pose.pose.position.y)
+
+        if self.start_pose:
+            dx = current_pose[0] - self.start_pose[0]
+            dy = current_pose[1] - self.start_pose[1]
+            distance_moved = (dx**2 + dy**2)**0.5
+
+            # Re-plan if robot moved more than 10 cm and 1 second has passed
+            now = self.get_clock().now()
+            if distance_moved > 0.1 and (now - self.last_plan_time).nanoseconds > 1e9:
+                self.start_pose = current_pose
+                self.last_plan_time = now
+                self.get_logger().info(f"Robot moved {distance_moved:.2f} m. Replanning path...")
+                self.try_generate_path()
+
+
     def try_generate_path(self):
+
+        # Get parameters
+        num_discrete = self.get_parameter('num_discrete_waypoints').get_parameter_value().integer_value
+        num_smooth = self.get_parameter('num_smooth_waypoints').get_parameter_value().integer_value
+
         if self.start_pose and self.goal_pose:
             self.get_logger().info("Both start and goal poses are set. Generating path...")
             waypoints = generate_collision_aware_path(
@@ -89,21 +122,63 @@ class PlannerNode(Node):
                 self.get_logger().warn('No path found!')
                 return
 
-            path_msg = Path()
-            path_msg.header.frame_id = "map"
-            path_msg.header.stamp = self.get_clock().now().to_msg()
+            # Raw waypoints (collision-aware)
+            discrete_waypoints = waypoints  # original A* path
 
-            for idx, (x, y) in enumerate(waypoints):
+            # Resample discrete path if user requested fewer waypoints
+            if num_discrete < len(discrete_waypoints):
+                indices = np.linspace(0, len(discrete_waypoints)-1, num_discrete, dtype=int)
+                discrete_waypoints = [discrete_waypoints[i] for i in indices]
+
+            # Smoothed path
+            smooth_waypoints = smooth_path(discrete_waypoints, num_points=num_smooth)
+
+            # publish discrete path
+            discrete_path_msg = Path()
+            discrete_path_msg.header.frame_id = "map"
+            discrete_path_msg.header.stamp = self.get_clock().now().to_msg()
+
+            # Compute orientations along the discrete path
+            discrete_waypoints_with_theta = compute_orientations(discrete_waypoints)
+
+            for idx, (x, y, theta) in enumerate(discrete_waypoints_with_theta):
                 pose = PoseStamped()
                 pose.header.frame_id = "map"
                 pose.pose.position.x = x
                 pose.pose.position.y = y
-                pose.pose.orientation.w = 1.0
-                path_msg.poses.append(pose)
-                self.get_logger().debug(f"Waypoint {idx}: x={x:.2f}, y={y:.2f}")
+                # Convert theta to quaternion
+                pose.pose.orientation.z = np.sin(theta/2)
+                pose.pose.orientation.w = np.cos(theta/2)
+                discrete_path_msg.poses.append(pose)
+                self.get_logger().debug(f"Waypoint {idx}: x={x:.2f}, y={y:.2f}, theta={theta:.2f} rad")
 
-            self.path_pub.publish(path_msg)
-            self.get_logger().info(f'Published collision-aware path with {len(waypoints)} waypoints')
+
+            self.discrete_path_pub.publish(discrete_path_msg)
+
+            # publish smooth path
+            smooth_path_msg = Path()
+            smooth_path_msg.header.frame_id = "map"
+            smooth_path_msg.header.stamp = self.get_clock().now().to_msg()
+
+            # Compute orientations along the smoothed path
+            smooth_waypoints_with_theta = compute_orientations(smooth_waypoints)
+
+            for idx, (x, y, theta) in enumerate(smooth_waypoints_with_theta):
+                pose = PoseStamped()
+                pose.header.frame_id = "map"
+                pose.pose.position.x = x
+                pose.pose.position.y = y
+                # Convert theta to quaternion
+                pose.pose.orientation.z = np.sin(theta/2)
+                pose.pose.orientation.w = np.cos(theta/2)
+                smooth_path_msg.poses.append(pose)
+                self.get_logger().debug(f"Waypoint {idx}: x={x:.2f}, y={y:.2f}, theta={theta:.2f} rad")
+
+
+
+            self.smooth_path_pub.publish(smooth_path_msg)
+
+            self.get_logger().info(f"Published raw path ({len(discrete_waypoints)} waypoints) and smoothed path ({len(smooth_waypoints)} waypoints)")
 
         else:
             if not self.start_pose:

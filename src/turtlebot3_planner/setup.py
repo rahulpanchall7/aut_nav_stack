@@ -44,6 +44,8 @@ setup(
         'console_scripts': [
             'planner_node = turtlebot3_planner.planner_node:main',
             'path_generator = turtlebot3_planner.path_generator:main',
+            'path_smoother = turtlebot3_planner.path_smoother:main',
+            'trajectory_generator_node = turtlebot3_planner.trajectory_generator_node:main',
         ],
     },
 )

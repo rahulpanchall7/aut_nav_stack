@@ -16,16 +16,34 @@ This project implements a complete navigation stack using TurtleBot3 (Waffle) in
 
 - Ubuntu 22.04
 - ROS 2 Humble Hawksbill
-- TurtleBot3:
+- TurtleBot3
     - Required for the robot model, cmd_vel, sensors, and robot dimensions.
     ```bash
-        sudo apt install ros-humble-turtlebot3*
+    sudo apt install ros-humble-turtlebot3*
     ```
-    - Set the model in your .bashrc
+    - Set the model in your `.bashrc`
     ```bash
-        export TURTLEBOT3_MODEL=waffle
+    export TURTLEBOT3_MODEL=waffle
     ```
-- Python 3 packages:
+- SLAM Toolbox
+    - For generating `/map` if you need mapping.
     ```bash
-        pip install numpy pillow scipy
+    sudo apt install ros-humble-slam-toolbox
+    ```
+- Nav2 / AMCL
+    - For localization (`/amcl_pose topic`).
+    ```bash
+    sudo apt install ros-humble-navigation2 ros-humble-nav2-bringup
+    ```
+- rosdep (automatic)
+    - To make sure all ROS2 dependencies in `package.xml` are installed:
+    ```bash
+    cd ~/ros2_ws
+    rosdep update
+    rosdep install --from-paths src --ignore-src -y
+    ```
+- Python Dependencies
+    - Python libraries used in the nodes:    
+    ```bash
+    pip install numpy pillow scipy
     ```

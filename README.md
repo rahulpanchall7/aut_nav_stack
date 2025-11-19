@@ -47,3 +47,11 @@ This project implements a complete navigation stack using TurtleBot3 (Waffle) in
     ```bash
     pip install numpy pillow scipy
     ```
+- Extras
+    - If any node imports fail, install the missing package as prompted.
+
+
+## **2. Clone Repository**
+```bash
+
+```

@@ -14,7 +14,7 @@ setup(
 
         # Launch files
         ('share/' + package_name + '/launch', [
-            #'launch/bot_launch.py',
+            'launch/planner_launch.py',
             'launch/rviz_launch.py',
         ]),
 

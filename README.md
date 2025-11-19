@@ -52,6 +52,15 @@ This project implements a complete navigation stack using TurtleBot3 (Waffle) in
 
 
 ## **2. Clone Repository**
-```bash
+- git clone
+    ```bash
+    git clone https://github.com/rahulpanchall7/rahul_panchal_10x_task.git
+    ```
+- rosdep (automatic)
+    ```bash
+    cd ~/rahul_panchal_10x_task
+    rosdep update
+    rosdep install --from-paths src --ignore-src -y
+    ```
 
-```
+## **3. Build Workspace**

@@ -3,15 +3,18 @@ import sys
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
-from nav_msgs.msg import Path
+from nav_msgs.msg import Path, OccupancyGrid
 from ament_index_python.packages import get_package_share_directory
 import yaml
 from PIL import Image
 import numpy as np
+from scipy.ndimage import binary_dilation
+from std_msgs.msg import Header
 
 from turtlebot3_planner.path_generator import generate_collision_aware_path
 from turtlebot3_planner.path_smoother import smooth_path
 from turtlebot3_planner.path_smoother import compute_orientations
+
 
 def load_map_from_yaml(yaml_file):
     """
@@ -28,7 +31,7 @@ def load_map_from_yaml(yaml_file):
     with open(yaml_file, 'r') as f:
         map_data = yaml.safe_load(f)
 
-    resolution = map_data['resolution']
+    resolution = tuple(map_data['origin'][:2])
     origin = tuple(map_data['origin'][:2])  # x, y
 
     # Get full path to PGM file
@@ -42,7 +45,26 @@ def load_map_from_yaml(yaml_file):
     occupancy_grid = np.zeros_like(img, dtype=np.int8)
     occupancy_grid[img < 127] = 1  # treat dark pixels as obstacles
 
-    return occupancy_grid, resolution, origin
+    return occupancy_grid, map_data['resolution'], origin
+
+
+def inflate_obstacles(occupancy_grid, inflation_radius_cells):
+    """
+    Inflate obstacles by a number of cells.
+
+    Args:
+        occupancy_grid (np.ndarray): 0=free, 1=occupied
+        inflation_radius_cells (int): number of cells to inflate
+
+    Returns:
+        np.ndarray: inflated occupancy grid
+    """
+    grid_bool = occupancy_grid.astype(bool)
+    y, x = np.ogrid[-inflation_radius_cells:inflation_radius_cells+1,
+                     -inflation_radius_cells:inflation_radius_cells+1]
+    selem = x**2 + y**2 <= inflation_radius_cells**2
+    inflated_grid = binary_dilation(grid_bool, structure=selem).astype(np.int8)
+    return inflated_grid
 
 
 class PlannerNode(Node):
@@ -61,10 +83,10 @@ class PlannerNode(Node):
         # Initialize last plan timestamp for rate-limiting
         self.last_plan_time = self.get_clock().now()
 
-
-        # Publisher
+        # Publishers
         self.discrete_path_pub = self.create_publisher(Path, '/discrete_path', 10)
         self.smooth_path_pub = self.create_publisher(Path, '/smooth_path', 10)
+        self.inflated_map_pub = self.create_publisher(OccupancyGrid, '/inflated_map', 1)  # NEW: for RViz
 
         # Store start/goal poses
         self.start_pose = None
@@ -73,7 +95,37 @@ class PlannerNode(Node):
         # Load static map
         map_yaml_path = os.path.join(get_package_share_directory('turtlebot3_planner'), 'maps', 'map.yaml')
         self.occupancy_grid, self.resolution, self.origin = load_map_from_yaml(map_yaml_path)
-        self.get_logger().info(f"Loaded map: resolution={self.resolution}, origin={self.origin}")
+
+        # Inflate obstacles for TurtleBot3 Waffle
+        robot_radius = 0.13  # Waffle radius in meters
+        safety_margin = 0.075  # additional safety margin in meters
+        inflation_radius_cells = int((robot_radius + safety_margin) / self.resolution)
+        self.occupancy_grid = inflate_obstacles(self.occupancy_grid, inflation_radius_cells)
+        self.get_logger().info(f"Map loaded and obstacles inflated by {inflation_radius_cells} cells")
+
+        # Publish inflated map for visualization in RViz continuously
+        self.create_timer(1.0, self.publish_inflated_map)  # publish every 1 second
+
+    def publish_inflated_map(self):
+        """
+        Publish the inflated occupancy grid to /inflated_map for RViz visualization
+        """
+        msg = OccupancyGrid()
+        msg.header = Header()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = "map"
+        msg.info.resolution = self.resolution
+        msg.info.width = self.occupancy_grid.shape[1]
+        msg.info.height = self.occupancy_grid.shape[0]
+        msg.info.origin.position.x = self.origin[0]
+        msg.info.origin.position.y = self.origin[1]
+
+        # OccupancyGrid expects values 0-100 (unknown=-1)
+        flat_grid = [int(v*100) for v in self.occupancy_grid.flatten()]
+        msg.data = flat_grid
+
+        self.inflated_map_pub.publish(msg)
+        self.get_logger().debug("Published inflated occupancy grid for RViz")
 
     def initial_pose_callback(self, msg):
         # PoseWithCovarianceStamped has msg.pose.pose
@@ -102,9 +154,7 @@ class PlannerNode(Node):
                 self.get_logger().info(f"Robot moved {distance_moved:.2f} m. Replanning path...")
                 self.try_generate_path()
 
-
     def try_generate_path(self):
-
         # Get parameters
         num_discrete = self.get_parameter('num_discrete_waypoints').get_parameter_value().integer_value
         num_smooth = self.get_parameter('num_smooth_waypoints').get_parameter_value().integer_value
@@ -152,7 +202,6 @@ class PlannerNode(Node):
                 discrete_path_msg.poses.append(pose)
                 self.get_logger().debug(f"Waypoint {idx}: x={x:.2f}, y={y:.2f}, theta={theta:.2f} rad")
 
-
             self.discrete_path_pub.publish(discrete_path_msg)
 
             # publish smooth path
@@ -174,8 +223,6 @@ class PlannerNode(Node):
                 smooth_path_msg.poses.append(pose)
                 self.get_logger().debug(f"Waypoint {idx}: x={x:.2f}, y={y:.2f}, theta={theta:.2f} rad")
 
-
-
             self.smooth_path_pub.publish(smooth_path_msg)
 
             self.get_logger().info(f"Published raw path ({len(discrete_waypoints)} waypoints) and smoothed path ({len(smooth_waypoints)} waypoints)")
@@ -185,6 +232,7 @@ class PlannerNode(Node):
                 self.get_logger().info("Waiting for initial pose...")
             if not self.goal_pose:
                 self.get_logger().info("Waiting for goal pose...")
+
 
 def main(args=None):
     rclpy.init(args=args)

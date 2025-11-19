@@ -16,6 +16,7 @@ setup(
         ('share/' + package_name + '/launch', [
             'launch/planner_launch.py',
             'launch/rviz_launch.py',
+            'launch/amcl_launch.py',
         ]),
 
         # RViz config

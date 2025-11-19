@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
+from sensor_msgs.msg import LaserScan  # For dynamic obstacle detection
 from turtlebot3_msgs.msg import Trajectory, TrajectoryPoint  # adjust import as per your package
 import math
 import numpy as np
@@ -14,6 +15,8 @@ class PurePursuitController(Node):
         # Subscribers
         self.create_subscription(Trajectory, '/trajectory', self.trajectory_callback, 10)
         self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
+        # New subscriber for dynamic obstacles
+        self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
 
         # Publisher
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -32,6 +35,10 @@ class PurePursuitController(Node):
         self.max_linear_vel = 0.22     # TurtleBot3 max
         self.max_angular_vel = 2.84    # TurtleBot3 max
         self.dt = 0.1                  # control loop dt
+
+        # Obstacle avoidance parameters
+        self.min_obstacle_distance = 0.25  # meters, stop if closer
+        self.scan_ranges = []  # store latest lidar scan
 
         # Control loop timer
         self.timer = self.create_timer(self.dt, self.control_loop)
@@ -52,6 +59,12 @@ class PurePursuitController(Node):
         self.trajectory = [(p.x, p.y, p.t) for p in msg.points]
         self.current_index = 0
         self.get_logger().info(f"Received trajectory with {len(self.trajectory)} points")
+
+    def scan_callback(self, msg):
+        # Store latest LIDAR scan ranges
+        self.scan_ranges = np.array(msg.ranges)
+        # Replace inf values with max range for safety
+        self.scan_ranges[self.scan_ranges > msg.range_max] = msg.range_max
 
     def control_loop(self):
         if not self.trajectory or self.current_index >= len(self.trajectory):
@@ -88,7 +101,6 @@ class PurePursuitController(Node):
             curvature = 2 * y_r / (self.lookahead_distance ** 2)
 
         # --- Compute linear velocity based on trajectory timestamps ---
-        # estimate desired velocity along trajectory segment
         if self.current_index > 0:
             x_prev, y_prev, t_prev = self.trajectory[self.current_index - 1]
             segment_length = math.hypot(x_g - x_prev, y_g - y_prev)
@@ -99,6 +111,20 @@ class PurePursuitController(Node):
                 v = self.max_linear_vel
         else:
             v = self.max_linear_vel
+
+        # --- Dynamic Obstacle Avoidance Layer ---
+        if len(self.scan_ranges) > 0:
+            # Consider only front +/- 30 degrees
+            front_angle = 30  # degrees
+            n = len(self.scan_ranges)
+            indices = np.arange(n//2 - n*front_angle//360, n//2 + n*front_angle//360, dtype=int)
+            front_distances = self.scan_ranges[indices]
+            min_dist = np.min(front_distances)
+
+            if min_dist < self.min_obstacle_distance:
+                # Obstacle too close → stop
+                self.get_logger().warn(f"Obstacle detected at {min_dist:.2f} m! Stopping.")
+                v = 0.0
 
         # Compute angular velocity
         omega = curvature * v

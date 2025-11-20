@@ -12,6 +12,9 @@ class PurePursuitController(Node):
     def __init__(self):
         super().__init__('pure_pursuit_controller')
 
+        # === NEW: Controller state machine ===
+        self.state = "IDLE"   # States: IDLE, TRACKING, GOAL_REACHED
+
         # Subscribers
         self.create_subscription(Trajectory, '/trajectory', self.trajectory_callback, 10)
         self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
@@ -37,7 +40,7 @@ class PurePursuitController(Node):
         self.dt = 0.1                  # control loop dt
 
         # Obstacle avoidance parameters
-        self.min_obstacle_distance = 0.25  # meters, stop if closer
+        self.min_obstacle_distance = 0.2  # meters, stop if closer
         self.scan_ranges = []  # store latest lidar scan
 
         # --- Added for trajectory logging ---
@@ -48,6 +51,8 @@ class PurePursuitController(Node):
 
         # Control loop timer
         self.timer = self.create_timer(self.dt, self.control_loop)
+
+    # ========================== SUBSCRIBERS ============================= #
 
     def odom_callback(self, msg):
         # Update robot pose
@@ -64,7 +69,16 @@ class PurePursuitController(Node):
         # Store trajectory points: (x, y, t)
         self.trajectory = [(p.x, p.y, p.t) for p in msg.points]
         self.current_index = 0
-        self.get_logger().info(f"Received trajectory with {len(self.trajectory)} points")
+
+        # === NEW: Reset logging for new goal ===
+        self.actual_x = []
+        self.actual_y = []
+        self.time_stamps = []
+
+        # === NEW: Activate tracking mode ===
+        self.state = "TRACKING"
+
+        self.get_logger().info(f"Received NEW trajectory with {len(self.trajectory)} points")
 
     def scan_callback(self, msg):
         # Store latest LIDAR scan ranges
@@ -72,9 +86,26 @@ class PurePursuitController(Node):
         # Replace inf values with max range for safety
         self.scan_ranges[self.scan_ranges > msg.range_max] = msg.range_max
 
+    # ========================== CONTROL LOOP ============================= #
+
     def control_loop(self):
+
+        # === NEW: State machine logic ===
+        if self.state == "IDLE":
+            self.cmd_pub.publish(Twist())  # do nothing
+            return
+
+        if self.state == "GOAL_REACHED":
+            self.cmd_pub.publish(Twist())  # remain stopped
+            return
+
+        if self.state == "TRACKING":
+            pass  # continue below
+
+        # ================================================================= #
+
         if not self.trajectory or self.current_index >= len(self.trajectory):
-            # Stop robot if trajectory finished
+            # Stop robot if trajectory finished but not declared as reached
             self.cmd_pub.publish(Twist())
             return
 
@@ -148,26 +179,41 @@ class PurePursuitController(Node):
         cmd.angular.z = omega
         self.cmd_pub.publish(cmd)
 
-        # Stop if we are very close to the last point
+        # ==================== GOAL DETECTION ===================== #
         x_last, y_last, _ = self.trajectory[-1]
         if math.hypot(x_last - self.x, y_last - self.y) < 0.05:
+
             self.cmd_pub.publish(Twist())
             self.get_logger().info("Reached final waypoint")
 
-            # --- Plot planned vs actual path ---
-            planned_x = [p[0] for p in self.trajectory]
-            planned_y = [p[1] for p in self.trajectory]
+            # === NEW: Set state to GOAL_REACHED ===
+            self.state = "GOAL_REACHED"
 
-            plt.figure()
-            plt.plot(planned_x, planned_y, 'r--', label='Planned Path')
-            plt.plot(self.actual_x, self.actual_y, 'b-', label='Actual Path')
-            plt.scatter(planned_x[-1], planned_y[-1], c='g', marker='*', label='Goal')
-            plt.xlabel('X (m)')
-            plt.ylabel('Y (m)')
-            plt.title('Planned vs Actual Path')
-            plt.legend()
-            plt.show()
-            # -----------------------------------
+            # === NEW: Plot non-blocking & safe ===
+            try:
+                plt.figure()
+                planned_x = [p[0] for p in self.trajectory]
+                planned_y = [p[1] for p in self.trajectory]
+                plt.plot(planned_x, planned_y, 'r--', label='Planned Path')
+                plt.plot(self.actual_x, self.actual_y, 'b-', label='Actual Path')
+                plt.scatter(planned_x[-1], planned_y[-1], c='g', marker='*', label='Goal')
+                plt.xlabel('X (m)')
+                plt.ylabel('Y (m)')
+                plt.title('Planned vs Actual Path')
+                plt.legend()
+                plt.draw()
+                plt.pause(0.001)  # Non-blocking
+                plt.close()
+            except:
+                self.get_logger().warn("Plotting failed (Matplotlib env issue). Continuing normally.")
+
+            # === NEW: Clear old trajectory for next goal ===
+            self.trajectory = []
+            self.current_index = 0
+
+            return
+        # =========================================================== #
+
 
 def main(args=None):
     rclpy.init(args=args)

@@ -97,8 +97,8 @@ class PlannerNode(Node):
         self.occupancy_grid, self.resolution, self.origin = load_map_from_yaml(map_yaml_path)
 
         # Inflate obstacles for TurtleBot3 Waffle
-        robot_radius = 0.13  # Waffle radius in meters
-        safety_margin = 0.075  # additional safety margin in meters
+        robot_radius = 0.15 
+        safety_margin = 0.1  
         inflation_radius_cells = int((robot_radius + safety_margin) / self.resolution)
         self.occupancy_grid = inflate_obstacles(self.occupancy_grid, inflation_radius_cells)
         self.get_logger().info(f"Map loaded and obstacles inflated by {inflation_radius_cells} cells")

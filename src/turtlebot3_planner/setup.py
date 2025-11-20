@@ -36,6 +36,7 @@ setup(
         'PyYAML',
         'Pillow',
     ],
+    tests_require=['pytest'],
     zip_safe=True,
     maintainer='rahulpanchal7',
     maintainer_email='rahulpanchal7.de@gmail.com',

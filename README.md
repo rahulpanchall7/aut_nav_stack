@@ -131,6 +131,12 @@ This section explains exactly how to start the simulation, launch mapping/locali
     ```
 - Set the initial and goal pose using the `2D Pose Estimate` and `2D Nav Goal` tools and the robot performs autonomous motion along the given trajectory
 
+**4.8 Testing the packages**
+- while the simulation is running
+    ```bash
+    colcon test --packages-select turtlebot3_planner turtlebot3_controller --event-handlers console_direct+
+    ```
+
 
 
 

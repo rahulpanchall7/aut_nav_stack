@@ -1,4 +1,4 @@
-# README: TurtleBot3 Autonomous Navigation Stack 
+# README: ROS2 Autonomous Navigation Stack (RANS)
 
 This project implements a complete navigation stack using TurtleBot3 (Waffle) in ROS2. It includes:
 
